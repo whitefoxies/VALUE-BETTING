@@ -11,41 +11,12 @@ Exemples :
 
 import argparse
 import os
-import sqlite3
 import sys
 import time
 
 import praw
 
-DEFAULT_DB = "data/reddit.sqlite"
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS posts (
-    id TEXT PRIMARY KEY,
-    subreddit TEXT,
-    title TEXT,
-    selftext TEXT,
-    author TEXT,
-    score INTEGER,
-    num_comments INTEGER,
-    created_utc REAL,
-    url TEXT,
-    permalink TEXT,
-    flair TEXT,
-    fetched_at REAL
-);
-CREATE TABLE IF NOT EXISTS comments (
-    id TEXT PRIMARY KEY,
-    post_id TEXT REFERENCES posts(id),
-    parent_id TEXT,
-    author TEXT,
-    body TEXT,
-    score INTEGER,
-    created_utc REAL,
-    fetched_at REAL
-);
-CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
-"""
+from reddit.db import DEFAULT_DB, open_db, save_comments, save_posts
 
 
 def make_client():
@@ -65,50 +36,41 @@ def make_client():
     return reddit
 
 
-def open_db(path):
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.executescript(SCHEMA)
-    return conn
+def post_row(post, now):
+    return {
+        "id": post.id,
+        "subreddit": post.subreddit.display_name,
+        "title": post.title,
+        "selftext": post.selftext,
+        "author": str(post.author) if post.author else None,
+        "score": post.score,
+        "num_comments": post.num_comments,
+        "created_utc": post.created_utc,
+        "url": post.url,
+        "permalink": f"https://www.reddit.com{post.permalink}",
+        "flair": post.link_flair_text,
+        "source": "api",
+        "fetched_at": now,
+    }
 
 
-def save_post(conn, post, now):
-    conn.execute(
-        "INSERT OR REPLACE INTO posts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (
-            post.id,
-            post.subreddit.display_name,
-            post.title,
-            post.selftext,
-            str(post.author) if post.author else None,
-            post.score,
-            post.num_comments,
-            post.created_utc,
-            post.url,
-            f"https://www.reddit.com{post.permalink}",
-            post.link_flair_text,
-            now,
-        ),
-    )
-
-
-def save_comments(conn, post, now, more_limit):
+def comment_rows(post, now, more_limit):
     post.comments.replace_more(limit=more_limit)
-    rows = [
-        (
-            c.id,
-            post.id,
-            c.parent_id,
-            str(c.author) if c.author else None,
-            c.body,
-            c.score,
-            c.created_utc,
-            now,
-        )
+    return [
+        {
+            "id": c.id,
+            "post_id": post.id,
+            "parent_id": c.parent_id,
+            "subreddit": post.subreddit.display_name,
+            "author": str(c.author) if c.author else None,
+            "body": c.body,
+            "score": c.score,
+            "created_utc": c.created_utc,
+            "source": "api",
+            "fetched_at": now,
+        }
         for c in post.comments.list()
     ]
-    conn.executemany("INSERT OR REPLACE INTO comments VALUES (?,?,?,?,?,?,?,?)", rows)
-    return len(rows)
 
 
 def iter_posts(sub, args):
@@ -138,10 +100,12 @@ def main():
     n_posts = n_comments = 0
     for post in iter_posts(sub, args):
         now = time.time()
-        save_post(conn, post, now)
+        save_posts(conn, [post_row(post, now)])
         n_posts += 1
         if not args.no_comments:
-            n_comments += save_comments(conn, post, now, args.more_limit)
+            rows = comment_rows(post, now, args.more_limit)
+            save_comments(conn, rows)
+            n_comments += len(rows)
         conn.commit()
         print(f"[{n_posts}] {post.score:>5}  {post.title[:90]}")
 

@@ -1,6 +1,30 @@
 # Collecteur Reddit
 
-Récupère les posts et commentaires d'un subreddit (par défaut r/algobetting) via l'API officielle de Reddit, et les stocke dans `data/reddit.sqlite`.
+Récupère les posts et commentaires d'un subreddit (par défaut r/algobetting) et les stocke dans `data/reddit.sqlite` (tables `posts` et `comments`, colonne `source` = `api`, `arctic_shift` ou `rss`).
+
+Trois sources, utilisables séparément :
+
+| Script | Source | Clé requise | Usage |
+|---|---|---|---|
+| `reddit/arctic_shift.py` | archive Arctic Shift | non | historique complet (posts + commentaires), scores figés à l'archivage |
+| `reddit/rss.py` | flux RSS public de Reddit | non | suivi des nouveaux posts (~1 requête/min/IP, sans score ni commentaires) |
+| `reddit/collector.py` | API officielle (PRAW) | oui | données à jour, scores, commentaires — nécessite une approbation de Reddit |
+
+Domaines à autoriser dans la politique réseau de l'environnement : `arctic-shift.photon-reddit.com`, `www.reddit.com` (et `oauth.reddit.com` pour l'API).
+
+Les conditions d'utilisation de Reddit encadrent la collecte automatisée : usage interne, non commercial, à faible volume, sans republier le contenu brut.
+
+## Sans clé : Arctic Shift + RSS
+
+```
+python -m reddit.arctic_shift --subreddit algobetting          # 1re fois : tout l'historique ; ensuite : reprend où il s'était arrêté
+python -m reddit.arctic_shift --subreddit BettingModels --after 2025-01-01
+python -m reddit.rss --subreddit algobetting --subreddit BettingModels --watch 15
+```
+
+Le RSS n'écrase jamais un post déjà présent (venant d'Arctic Shift ou de l'API), qui contient plus d'informations.
+
+# API officielle
 
 ## 1. Obtenir l'accès à l'API
 
@@ -25,8 +49,6 @@ REDDIT_USER_AGENT=script:value-betting-research:v0.1 (by u/VOTRE_PSEUDO)
 REDDIT_USERNAME=...
 REDDIT_PASSWORD=...
 ```
-
-Réseau : autoriser `www.reddit.com` et `oauth.reddit.com` dans la politique réseau de l'environnement.
 
 ## 3. Lancer
 
