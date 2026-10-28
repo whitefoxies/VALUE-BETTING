@@ -44,7 +44,7 @@ def get(endpoint, params, retries=6):
             wait = 2 ** (attempt + 1)
             print(f"  erreur ({e}), nouvel essai dans {wait}s")
             time.sleep(wait)
-        except (urllib.error.URLError, http.client.HTTPException, ConnectionError, TimeoutError) as e:
+        except (urllib.error.URLError, http.client.HTTPException, ConnectionError, TimeoutError, ValueError) as e:
             if attempt == retries:
                 raise
             wait = 2 ** (attempt + 1)
