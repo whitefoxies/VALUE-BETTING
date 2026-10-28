@@ -35,6 +35,14 @@ def get(endpoint, params, retries=4):
             if payload.get("error"):
                 raise RuntimeError(f"Arctic Shift : {payload['error']}")
             return payload["data"]
+        except urllib.error.HTTPError as e:
+            if e.code < 500:  # requête invalide : inutile de réessayer
+                raise RuntimeError(f"Arctic Shift HTTP {e.code} : {e.read().decode(errors='replace')[:300]}") from e
+            if attempt == retries:
+                raise
+            wait = 2 ** (attempt + 1)
+            print(f"  erreur ({e}), nouvel essai dans {wait}s")
+            time.sleep(wait)
         except (urllib.error.URLError, TimeoutError) as e:
             if attempt == retries:
                 raise
@@ -47,7 +55,10 @@ def paginate(endpoint, params, after):
     """Parcourt les résultats par ordre chronologique, page par page, à partir de `after` (epoch)."""
     cursor = after
     while True:
-        page = get(endpoint, {**params, "sort": "asc", "limit": PAGE_SIZE, "after": int(cursor)})
+        query = {**params, "sort": "asc", "limit": PAGE_SIZE}
+        if cursor:  # l'API refuse les epochs trop petits (ex. 0) : sans `after`, on part du début
+            query["after"] = int(cursor)
+        page = get(endpoint, query)
         if not page:
             return
         yield page
