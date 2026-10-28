@@ -10,6 +10,7 @@ Exemples :
 
 import argparse
 import calendar
+import http.client
 import json
 import time
 import urllib.error
@@ -25,7 +26,7 @@ COMMENT_FIELDS = "id,link_id,parent_id,subreddit,author,body,score,created_utc"
 PAGE_SIZE = 100
 
 
-def get(endpoint, params, retries=4):
+def get(endpoint, params, retries=6):
     url = f"{BASE_URL}/{endpoint}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     for attempt in range(retries + 1):
@@ -43,7 +44,7 @@ def get(endpoint, params, retries=4):
             wait = 2 ** (attempt + 1)
             print(f"  erreur ({e}), nouvel essai dans {wait}s")
             time.sleep(wait)
-        except (urllib.error.URLError, TimeoutError) as e:
+        except (urllib.error.URLError, http.client.HTTPException, ConnectionError, TimeoutError) as e:
             if attempt == retries:
                 raise
             wait = 2 ** (attempt + 1)
