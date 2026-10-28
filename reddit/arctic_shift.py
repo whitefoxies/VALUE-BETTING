@@ -37,14 +37,17 @@ def get(endpoint, params, retries=6):
                 raise RuntimeError(f"Arctic Shift : {payload['error']}")
             return payload["data"]
         except urllib.error.HTTPError as e:
-            if e.code < 500 and e.code != 429:  # requête invalide : inutile de réessayer
-                raise RuntimeError(f"Arctic Shift HTTP {e.code} : {e.read().decode(errors='replace')[:300]}") from e
+            body = e.read().decode(errors="replace")[:300]
+            # 429 = trop de requêtes ; 422 « Timeout. Maybe slow down a bit » = délai dépassé côté serveur
+            overloaded = e.code == 429 or (e.code == 422 and "timeout" in body.lower())
+            if e.code < 500 and not overloaded:  # requête invalide : inutile de réessayer
+                raise RuntimeError(f"Arctic Shift HTTP {e.code} : {body}") from e
             if attempt == retries:
-                raise
-            # 429 = trop de requêtes : on ralentit nettement (Retry-After s'il est fourni)
-            retry_after = e.headers.get("Retry-After") if e.code == 429 else None
+                raise RuntimeError(f"Arctic Shift HTTP {e.code} : {body}") from e
+            # serveur surchargé : on ralentit nettement (Retry-After s'il est fourni)
+            retry_after = e.headers.get("Retry-After") if overloaded else None
             wait = int(retry_after) if retry_after and retry_after.isdigit() else (
-                30 * 2 ** attempt if e.code == 429 else 2 ** (attempt + 1))
+                30 * 2 ** attempt if overloaded else 2 ** (attempt + 1))
             print(f"  erreur ({e}), nouvel essai dans {wait}s")
             time.sleep(wait)
         except (urllib.error.URLError, http.client.HTTPException, ConnectionError, TimeoutError, ValueError) as e:
